@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sasson
+      POSTGRES_PASSWORD: sasson
+      POSTGRES_DB: sasson
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sasson -d sasson']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sasson-net
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    command: redis-server --save 60 1
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sasson-net
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    ports:
+      - '8001:8001'
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - sasson-net
+
+  # app:
+  #   build: .
+  #   ports:
+  #     - '3000:3000'
+  #   env_file: .env
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - sasson-net
+
+networks:
+  sasson-net:
+    driver: bridge
+
+volumes:
+  pgdata:

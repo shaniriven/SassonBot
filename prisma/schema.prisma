@@ -1,0 +1,20 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Bar {
+  id         String   @id @default(uuid())
+  name       String
+  telegramId String   @unique
+  createdAt  DateTime @default(now())
+}
+
+model User {
+  id         String   @id @default(uuid())
+  telegramId String   @unique
+  createdAt  DateTime @default(now())
+}
