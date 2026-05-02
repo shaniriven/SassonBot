@@ -1,5 +1,9 @@
 export type MessageHandler = (userId: string, text: string) => Promise<void>;
 export type CommandHandler = (userId: string) => Promise<void>;
+export type GuardHandler = (
+  userId: string,
+  command: string | null,
+) => Promise<string | null>;
 
 export interface ChannelAdapter {
   sendMessage(userId: string, text: string): Promise<void>;
@@ -10,4 +14,6 @@ export interface ChannelAdapter {
   ): Promise<void>;
   onMessage(handler: MessageHandler): void;
   onCommand(command: string, handler: CommandHandler): void;
+  useGuard(handler: GuardHandler): void;
+  setUserCommands(userId: string, isAdmin: boolean): Promise<void>;
 }

@@ -16,5 +16,26 @@ model Bar {
 model User {
   id         String   @id @default(uuid())
   telegramId String   @unique
+  isAdmin    Boolean  @default(false)
   createdAt  DateTime @default(now())
+}
+
+model Match {
+  id          String   @id @default(uuid())
+  apiId       Int      @unique
+  homeTeam    String
+  awayTeam    String
+  league      String
+  kickoffTime DateTime
+  matchDate   String
+  status      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model League {
+  id          String   @id @default(uuid())
+  apiId       Int      @unique
+  seasonApiId Int?     @unique
+  createdAt   DateTime @default(now())
 }
