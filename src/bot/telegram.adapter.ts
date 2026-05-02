@@ -8,11 +8,7 @@ import {
   GuardHandler,
   MessageHandler,
 } from '../common/interfaces/channel-adapter.interface';
-import {
-  ADMIN_COMMANDS,
-  CMD,
-  USER_COMMANDS,
-} from './commands.const';
+import { ADMIN_COMMANDS, CMD, USER_COMMANDS } from './commands.const';
 
 @Injectable()
 export class TelegramAdapter implements ChannelAdapter, OnModuleInit {
