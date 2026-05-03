@@ -22,6 +22,14 @@ export class TelegramAdapter implements ChannelAdapter, OnModuleInit {
   }
 
   onModuleInit() {
+    this.bot.catch((err, ctx) => {
+      this.logger.error(
+        `Unhandled error for update ${ctx.update.update_id}: ${err}`,
+      );
+      if (ctx.chat) {
+        void ctx.reply('Something went wrong. Please contact support.');
+      }
+    });
     void this.bot.telegram.setMyCommands([CMD.start]);
     void this.bot.launch().then(() => this.logger.log('Telegram bot started'));
     process.once('SIGINT', () => this.bot.stop('SIGINT'));
