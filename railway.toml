@@ -1,0 +1,10 @@
+[build]
+builder = "dockerfile"
+
+[deploy]
+releaseCommand = "npx prisma migrate deploy"
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+startCommand = "node dist/main"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

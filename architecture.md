@@ -83,7 +83,7 @@ This document describes the layered architecture of the Sport Bar Personal Assis
 │  └──────────────────┘  └──────────────────┘  └──────────────┘  │
 │                                                                 │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │        Docker Compose (dev)  →  VPS / Railway (prod)    │   │
+│  │          Docker Compose (dev)  →  Railway (prod)          │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 
@@ -117,7 +117,7 @@ This document describes the layered architecture of the Sport Bar Personal Assis
 
 ### Deployment
 - **Dev:** Docker Compose (all services local)
-- **Prod:** Single VPS (Hetzner) or managed platform (Railway / Render)
+- **Prod:** Railway — app + PostgreSQL + Redis all in one project, git-push deploys
 
 ---
 
