@@ -9,7 +9,7 @@ COPY prisma ./prisma
 RUN npx prisma generate
 
 COPY . .
-RUN npm run build && echo "=== dist contents ===" && ls -la dist/
+RUN npm run build
 
 
 FROM node:22-alpine AS runner
