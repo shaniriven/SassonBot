@@ -199,11 +199,18 @@ export class BotService implements OnModuleInit {
     await this.notifyAdmins(formatWeekMatches(matches, 'Games This Week'));
   }
 
-  @Timeout(3600000)
+  @Timeout(30000)
   async sendTestAdminDigest(): Promise<void> {
-    this.logger.log('Sending test games digest to admins (1-hour timeout)');
-    const matches = await this.football.getTodayMatches();
-    const label = `[TEST] Games Today — ${todayLabel()}`;
-    await this.notifyAdmins(formatMatches(matches, label));
+    try {
+      this.logger.log('🔔 TEST DIGEST: Starting...');
+      const matches = await this.football.getTodayMatches();
+      this.logger.log(`🔔 TEST DIGEST: Got ${matches.length} matches`);
+      const label = `[TEST] Games Today — ${todayLabel()}`;
+      await this.notifyAdmins(formatMatches(matches, label));
+      this.logger.log('🔔 TEST DIGEST: Sent successfully');
+    } catch (err) {
+      this.logger.error('🔔 TEST DIGEST: Failed', err);
+      throw err;
+    }
   }
 }
