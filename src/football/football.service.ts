@@ -39,6 +39,7 @@ export class FootballService {
   @Cron('0 9 * * 6')
   async syncWeeklyGames(): Promise<void> {
     this.logger.log('Starting weekly games sync...');
+    await this.syncLeagues();
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);

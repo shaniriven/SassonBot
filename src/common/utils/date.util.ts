@@ -1,3 +1,11 @@
+export function todayLabel(): string {
+  return new Date().toLocaleDateString('he-IL', {
+    timeZone: 'Asia/Jerusalem',
+    day: '2-digit',
+    month: '2-digit',
+  });
+}
+
 export function toIsraeliDate(d: Date): string {
   return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
 }

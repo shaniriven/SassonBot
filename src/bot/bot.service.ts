@@ -1,5 +1,6 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Cron, Timeout } from '@nestjs/schedule';
 import { TelegramAdapter } from './telegram.adapter';
 import { PrismaService } from '../prisma/prisma.service';
 import { FootballService } from '../football/football.service';
@@ -8,6 +9,7 @@ import {
   formatMatches,
   formatWeekMatches,
 } from '../common/utils/format-matches.util';
+import { todayLabel } from '../common/utils/date.util';
 import { CMD } from './commands.const';
 
 const ONBOARDING_KEY = (userId: string) => `onboarding:${userId}`;
@@ -15,6 +17,8 @@ const ONBOARDING_TTL = 600;
 
 @Injectable()
 export class BotService implements OnModuleInit {
+  private readonly logger = new Logger(BotService.name);
+
   constructor(
     private readonly channel: TelegramAdapter,
     private readonly prisma: PrismaService,
@@ -164,5 +168,42 @@ export class BotService implements OnModuleInit {
         'This bot does not support regular messaging. Please use the commands menu to interact.',
       );
     });
+  }
+
+  private async notifyAdmins(message: string): Promise<void> {
+    const admins = await this.prisma.user.findMany({
+      where: { isAdmin: true },
+    });
+    if (admins.length === 0) {
+      this.logger.warn('No admin users found for notification');
+      return;
+    }
+    await Promise.all(
+      admins.map((a) => this.channel.sendMessage(a.telegramId, message)),
+    );
+    this.logger.log(`Notified ${admins.length} admin(s)`);
+  }
+
+  @Cron('0 13 * * *')
+  async sendDailyAdminDigest(): Promise<void> {
+    this.logger.log('Sending daily games digest to admins');
+    const matches = await this.football.getTodayMatches();
+    const label = `Games Today — ${todayLabel()}`;
+    await this.notifyAdmins(formatMatches(matches, label));
+  }
+
+  @Cron('0 16 * * 6')
+  async sendWeeklyAdminDigest(): Promise<void> {
+    this.logger.log('Sending weekly games digest to admins');
+    const matches = await this.football.getWeekMatches();
+    await this.notifyAdmins(formatWeekMatches(matches, 'Games This Week'));
+  }
+
+  @Timeout(3600000)
+  async sendTestAdminDigest(): Promise<void> {
+    this.logger.log('Sending test games digest to admins (1-hour timeout)');
+    const matches = await this.football.getTodayMatches();
+    const label = `[TEST] Games Today — ${todayLabel()}`;
+    await this.notifyAdmins(formatMatches(matches, label));
   }
 }
