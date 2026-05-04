@@ -47,11 +47,7 @@ export function formatMatchesForPosts(matches: Match[], label: string): string {
     grouped.get(m.league)!.push(m);
   }
 
-  const lines: string[] = [
-    `⚽️ ${label}`,
-    'Reply with numbers separated by commas.\nExample: 1,3. max 5 games.',
-    '',
-  ];
+  const lines: string[] = [`⚽️ ${label}`, ''];
   let index = 1;
 
   for (const [league, games] of grouped) {
