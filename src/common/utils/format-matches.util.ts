@@ -7,6 +7,18 @@ type Match = {
   league: string;
 };
 
+export function orderMatchesForPostSelection<T extends { league: string }>(
+  matches: T[],
+): T[] {
+  const grouped = new Map<string, T[]>();
+  for (const match of matches) {
+    if (!grouped.has(match.league)) grouped.set(match.league, []);
+    grouped.get(match.league)!.push(match);
+  }
+
+  return [...grouped.values()].flat();
+}
+
 function formatTime(date: Date): string {
   return date.toLocaleTimeString('he-IL', {
     timeZone: 'Asia/Jerusalem',

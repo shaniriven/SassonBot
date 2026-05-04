@@ -12,6 +12,7 @@ import {
   formatMatches,
   formatMatchesForPosts,
   formatWeekMatches,
+  orderMatchesForPostSelection,
 } from '../common/utils/format-matches.util';
 import { todayLabel } from '../common/utils/date.util';
 import { CMD } from './commands.const';
@@ -453,11 +454,13 @@ export class BotService implements OnModuleInit {
         return;
       }
 
+      const postSelectionMatches = orderMatchesForPostSelection(matches);
+
       await this.setPendingCommand(userId, {
         type: CMD.generatePost.command,
         step: 'awaiting_matches',
         matchDate,
-        matchIds: matches.map((m) => m.id),
+        matchIds: postSelectionMatches.map((m) => m.id),
       });
       await this.editMessageTextSafely(
         userId,
@@ -468,7 +471,7 @@ export class BotService implements OnModuleInit {
       await this.channel.sendMessage(
         userId,
         formatMatchesForPosts(
-          matches,
+          postSelectionMatches,
           `Post for - ${this.formatMatchDateLabel(matchDate)}`,
         ),
       );
