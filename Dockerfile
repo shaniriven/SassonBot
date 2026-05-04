@@ -23,5 +23,6 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/assets ./assets
 COPY package*.json ./
 COPY prisma ./prisma
+COPY prisma.config.ts ./
 
 CMD ["node", "dist/main"]
