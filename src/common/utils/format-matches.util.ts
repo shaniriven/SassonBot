@@ -38,6 +38,37 @@ export function formatMatches(matches: Match[], label: string): string {
   return lines.join('\n');
 }
 
+export function formatMatchesForPosts(matches: Match[], label: string): string {
+  if (matches.length === 0) return `No games scheduled ${label} ⚽️`;
+
+  const grouped = new Map<string, Match[]>();
+  for (const m of matches) {
+    if (!grouped.has(m.league)) grouped.set(m.league, []);
+    grouped.get(m.league)!.push(m);
+  }
+
+  const lines: string[] = [
+    `⚽️ ${label}`,
+    'Reply with numbers separated by commas.\nExample: 1,3. max 5 games.',
+    '',
+  ];
+  let index = 1;
+
+  for (const [league, games] of grouped) {
+    const flag = LEAGUE_FLAGS[league] ?? '🏆';
+    lines.push(`${flag} ${league} ${flag}`);
+    for (const m of games) {
+      lines.push(
+        `${index}. ${m.homeTeam} | ${m.awayTeam} | ${formatTime(m.kickoffTime)}`,
+      );
+      index += 1;
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n').trim();
+}
+
 export function formatWeekMatches(matches: Match[], label: string): string {
   if (matches.length === 0) return `No games scheduled — ${label} ⚽`;
 

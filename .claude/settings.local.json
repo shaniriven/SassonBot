@@ -4,7 +4,9 @@
       "WebSearch",
       "Bash(cp -r \"c:/Users/shani/dev/Sasson Bot/src/sports/const\" \"c:/Users/shani/dev/Sasson Bot/src/football/const\")",
       "Bash(cp -r \"c:/Users/shani/dev/Sasson Bot/src/sports/interfaces\" \"c:/Users/shani/dev/Sasson Bot/src/football/interfaces\")",
-      "Bash(npx eslint *)"
+      "Bash(npx eslint *)",
+      "Bash(docker compose *)",
+      "Bash(node -e \"const fal = require\\('@fal-ai/client'\\); console.log\\(Object.keys\\(fal\\)\\);\")"
     ]
   }
 }

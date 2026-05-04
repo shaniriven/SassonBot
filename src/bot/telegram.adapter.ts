@@ -24,14 +24,21 @@ export class TelegramAdapter implements ChannelAdapter, OnModuleInit {
   onModuleInit() {
     this.bot.catch((err, ctx) => {
       this.logger.error(
-        `Unhandled error for update ${ctx.update.update_id}: ${err}`,
+        `Unhandled error for update ${ctx.update.update_id}: ${String(err)}`,
       );
       if (ctx.chat) {
         void ctx.reply('Something went wrong. Please contact support.');
       }
     });
-    void this.bot.telegram.setMyCommands([CMD.start]);
-    void this.bot.launch().then(() => this.logger.log('Telegram bot started'));
+    void this.bot.telegram.setMyCommands([CMD.start]).catch((err) => {
+      this.logger.warn(`Failed to set default Telegram commands: ${err}`);
+    });
+    void this.bot
+      .launch()
+      .then(() => this.logger.log('Telegram bot started'))
+      .catch((err) => {
+        this.logger.error(`Failed to launch Telegram bot: ${err}`);
+      });
     process.once('SIGINT', () => this.bot.stop('SIGINT'));
     process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
   }
@@ -46,6 +53,19 @@ export class TelegramAdapter implements ChannelAdapter, OnModuleInit {
     caption?: string,
   ): Promise<void> {
     await this.bot.telegram.sendPhoto(userId, imageUrl, { caption });
+  }
+
+  async sendPhoto(
+    userId: string,
+    buffer: Buffer,
+    caption?: string,
+  ): Promise<string> {
+    const msg = await this.bot.telegram.sendPhoto(
+      userId,
+      { source: buffer },
+      { caption },
+    );
+    return msg.photo[msg.photo.length - 1].file_id;
   }
 
   async sendAction(

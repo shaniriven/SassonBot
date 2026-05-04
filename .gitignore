@@ -17,3 +17,6 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Dev preview output
+assets/debug/

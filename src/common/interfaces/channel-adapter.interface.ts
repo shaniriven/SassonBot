@@ -8,6 +8,7 @@ export type GuardHandler = (
 export interface ChannelAdapter {
   sendMessage(userId: string, text: string): Promise<void>;
   sendImage(userId: string, imageUrl: string, caption?: string): Promise<void>;
+  sendPhoto(userId: string, buffer: Buffer, caption?: string): Promise<string>;
   sendAction(
     userId: string,
     action: 'typing' | 'uploading_photo',

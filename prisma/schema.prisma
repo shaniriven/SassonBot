@@ -25,12 +25,42 @@ model Match {
   apiId       Int      @unique
   homeTeam    String
   awayTeam    String
+  homeLogo    String?
+  awayLogo    String?
   league      String
   kickoffTime DateTime
   matchDate   String
   status      String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  descriptions Description[]
+}
+
+model Post {
+  id             String   @id @default(uuid())
+  postDate       String
+  telegramFileId String?
+  createdAt      DateTime @default(now())
+}
+
+model Background {
+  id           String   @id @default(uuid())
+  filename     String   @unique
+  lastUsedDate String?
+}
+
+model Font {
+  id           String   @id @default(uuid())
+  family       String   @unique
+  lastUsedDate String?
+}
+
+model Description {
+  id        String   @id @default(uuid())
+  matchId   String
+  match     Match    @relation(fields: [matchId], references: [id])
+  caption   String
+  createdAt DateTime @default(now())
 }
 
 model League {

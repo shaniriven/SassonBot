@@ -36,24 +36,43 @@ Docker services and `TELEGRAM_BOT_TOKEN` are already configured and running. You
 
 The app is a NestJS Telegram bot for a sports bar. It uses long-polling (Telegraf `bot.launch()`), not webhooks. The HTTP server exists only for the health endpoint.
 
+> For full onboarding, flows, next steps, and deployment details see [DEVELOPER.md](DEVELOPER.md).
+
 ### Module layout
 
 | Module | Role |
 |--------|------|
-| `AppModule` | Root — wires ConfigModule (global), PrismaModule, BotModule, HealthModule |
-| `PrismaModule` | `@Global()` — PrismaService is available everywhere without re-importing |
-| `BotModule` | TelegramAdapter + BotService |
-| `HealthModule` | `GET /health` via Terminus + custom Prisma indicator |
+| `AppModule` | Root — wires all modules |
+| `PrismaModule` | `@Global()` — PrismaService available everywhere |
+| `RedisModule` | `@Global()` — RedisService available everywhere |
+| `TelegramModule` | `@Global()` — TelegramAdapter available everywhere |
+| `BotModule` | BotService — command handlers, cron digests, user registration flow |
+| `FootballModule` | Sports API sync, match queries, cron every Saturday 09:00 |
+| `DescriptionModule` | BullMQ queue — AI caption generation via Groq |
+| `PostModule` | BullMQ queue — poster image composition via Sharp |
+| `PosterModule` | PosterService (Sharp), BackgroundService (rotates 3 backgrounds daily) |
+| `GroqModule` | Groq SDK wrapper — `llama-3.3-70b-versatile` |
+| `HealthModule` | `GET /health` via Terminus + Prisma indicator |
 
 ### Channel adapter pattern
 
-`ChannelAdapter` (`src/common/interfaces/channel-adapter.interface.ts`) abstracts the messaging channel. `TelegramAdapter` is the only implementation so far. `BotService` registers command and message handlers via `onCommand` / `onMessage` — it never touches Telegraf directly. New channels (e.g. WhatsApp) should implement `ChannelAdapter` and be swapped in `BotModule`.
+`ChannelAdapter` (`src/common/interfaces/channel-adapter.interface.ts`) abstracts the messaging channel. `TelegramAdapter` is the only implementation. `BotService` registers handlers via `onCommand` / `onMessage` — never touches Telegraf directly. New channels implement `ChannelAdapter` and are swapped in `BotModule`.
 
 ### Data layer
 
 `PrismaService` extends `PrismaClient` and uses the `@prisma/adapter-pg` driver adapter (node-postgres pool) instead of the default binary engine — set via `new PrismaPg(pool)` in the constructor. The `DATABASE_URL` must point to the Postgres instance from `docker-compose.yml`.
 
-BullMQ + ioredis are installed and ready but not yet wired into any module.
+BullMQ + ioredis are wired — two queues: `description` (AI captions) and `post` (poster images).
+
+### Two-bot rule
+
+There are two separate Telegram bot tokens: one for local dev, one for Railway production. Never run both with the same token simultaneously — they compete for updates. Local `.env` holds the dev token; Railway env vars hold the prod token.
+
+### Required local assets
+
+These files must exist or poster generation will fail:
+- `assets/fonts/Oswald-Bold.ttf`
+- `assets/backgrounds/bg-1.png`, `bg-2.png`, `bg-3.png`
 
 ### Environment variables (see `.env.example`)
 
@@ -61,8 +80,12 @@ BullMQ + ioredis are installed and ready but not yet wired into any module.
 |----------|---------|
 | `DATABASE_URL` | `postgresql://sasson:sasson@localhost:5432/sasson` |
 | `REDIS_URL` | `redis://localhost:6379` |
-| `TELEGRAM_BOT_TOKEN` | Required — bot won't start without it |
+| `TELEGRAM_BOT_TOKEN` | Dev token locally, prod token on Railway |
 | `PORT` | HTTP server port, defaults to 3000 |
+| `SPORTS_API_KEY` | api-sports.io — paid monthly, manual renewal required |
+| `ADMIN_CODE` | Secret code users enter to become admins |
+| `GROQ_API_KEY` | Groq LLM key |
+| `FAL_KEY` | fal.ai key — present in env but not yet used in code |
 
 ### Docker services
 

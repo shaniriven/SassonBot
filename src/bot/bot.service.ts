@@ -1,19 +1,19 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Cron, Timeout } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { TelegramAdapter } from './telegram.adapter';
 import { PrismaService } from '../prisma/prisma.service';
 import { FootballService } from '../football/football.service';
 import { RedisService } from '../redis/redis.service';
+import { PostService } from '../post/post.service';
 import {
   formatMatches,
+  formatMatchesForPosts,
   formatWeekMatches,
 } from '../common/utils/format-matches.util';
 import { todayLabel } from '../common/utils/date.util';
 import { CMD } from './commands.const';
-
-const ONBOARDING_KEY = (userId: string) => `onboarding:${userId}`;
-const ONBOARDING_TTL = 600;
+import { BOT_STATE_KEY, BOT_STATE_TTL, PendingCommand } from './bot.const';
 
 @Injectable()
 export class BotService implements OnModuleInit {
@@ -25,9 +25,14 @@ export class BotService implements OnModuleInit {
     private readonly football: FootballService,
     private readonly redis: RedisService,
     private readonly config: ConfigService,
+    private readonly post: PostService,
   ) {}
 
   onModuleInit() {
+    void this.refreshKnownUserCommands().catch((err) => {
+      this.logger.warn(`Failed to refresh Telegram commands: ${err}`);
+    });
+
     this.channel.useGuard(async (userId, command) => {
       if (!command || command === CMD.start.command) return null;
       const user = await this.prisma.user.findUnique({
@@ -44,15 +49,15 @@ export class BotService implements OnModuleInit {
       if (existing) {
         await this.channel.sendMessage(
           userId,
-          "You are already registered. Use /games_today to see today's matches.",
+          'You are already registered. Use any command from the menu to get started.',
         );
         return;
       }
       await this.prisma.user.create({ data: { telegramId: userId } });
       await this.redis.set(
-        ONBOARDING_KEY(userId),
+        BOT_STATE_KEY.onboarding(userId),
         'awaiting_admin_code',
-        ONBOARDING_TTL,
+        BOT_STATE_TTL.onboarding,
       );
       await this.channel.sendMessage(
         userId,
@@ -61,13 +66,16 @@ export class BotService implements OnModuleInit {
     });
 
     this.channel.onCommand(CMD.gamesToday.command, async (userId) => {
+      await this.cancelPendingCommand(userId);
       const matches = await this.football.getTodayMatches();
-      const now = new Date();
-      const label = `Games Today — ${now.toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit' })}`;
-      await this.channel.sendMessage(userId, formatMatches(matches, label));
+      await this.channel.sendMessage(
+        userId,
+        formatMatches(matches, `Games Today - ${todayLabel()}`),
+      );
     });
 
     this.channel.onCommand(CMD.gamesWeek.command, async (userId) => {
+      await this.cancelPendingCommand(userId);
       const matches = await this.football.getWeekMatches();
       await this.channel.sendMessage(
         userId,
@@ -76,6 +84,7 @@ export class BotService implements OnModuleInit {
     });
 
     this.channel.onCommand(CMD.gamesNextWeek.command, async (userId) => {
+      await this.cancelPendingCommand(userId);
       const matches = await this.football.getNextWeekMatches();
       await this.channel.sendMessage(
         userId,
@@ -91,12 +100,13 @@ export class BotService implements OnModuleInit {
         await this.channel.sendMessage(userId, 'Not authorized.');
         return;
       }
+      await this.cancelPendingCommand(userId);
       await this.channel.sendMessage(userId, 'Syncing fixtures from API...');
       try {
         const { synced } = await this.football.manualSync();
         await this.channel.sendMessage(
           userId,
-          `Sync complete — ${synced} total fixtures in DB`,
+          `Sync complete - ${synced} total matches in DB`,
         );
       } catch (err) {
         await this.channel.sendMessage(userId, `Sync failed: ${err}`);
@@ -113,12 +123,13 @@ export class BotService implements OnModuleInit {
           await this.channel.sendMessage(userId, 'Not authorized.');
           return;
         }
+        await this.cancelPendingCommand(userId);
         try {
           const { loaded } = await this.football.syncLeagues();
           if (loaded === 0) {
             await this.channel.sendMessage(
               userId,
-              'No leagues loaded — add IDs to src/football/const/leagues.const.ts first',
+              'No leagues loaded - add IDs to leagues.const.ts first',
             );
             return;
           }
@@ -132,10 +143,36 @@ export class BotService implements OnModuleInit {
       },
     );
 
+    this.channel.onCommand(CMD.adminGeneratePost.command, async (userId) => {
+      const user = await this.prisma.user.findUnique({
+        where: { telegramId: userId },
+      });
+      if (!user?.isAdmin) {
+        await this.channel.sendMessage(userId, 'Not authorized.');
+        return;
+      }
+      const matches = await this.football.getTodayMatches();
+      if (matches.length === 0) {
+        await this.channel.sendMessage(userId, 'No matches today.');
+        return;
+      }
+
+      await this.replacePendingCommand(userId, {
+        type: CMD.adminGeneratePost.command,
+        matchIds: matches.map((m) => m.id),
+      });
+      await this.channel.sendMessage(
+        userId,
+        formatMatchesForPosts(matches, `Post for - ${todayLabel()}`),
+      );
+    });
+
     this.channel.onMessage(async (userId, text) => {
-      const state = await this.redis.get(ONBOARDING_KEY(userId));
-      if (state === 'awaiting_admin_code') {
-        await this.redis.del(ONBOARDING_KEY(userId));
+      const onboardingState = await this.redis.get(
+        BOT_STATE_KEY.onboarding(userId),
+      );
+      if (onboardingState === 'awaiting_admin_code') {
+        await this.redis.del(BOT_STATE_KEY.onboarding(userId));
         const adminCode = this.config.get<string>('ADMIN_CODE');
         if (text.trim() === adminCode) {
           await this.prisma.user.update({
@@ -163,11 +200,114 @@ export class BotService implements OnModuleInit {
         return;
       }
 
+      const pendingCommand = await this.getPendingCommand(userId);
+      if (pendingCommand?.type === CMD.adminGeneratePost.command) {
+        await this.handlePendingPostCommand(userId, text, pendingCommand);
+        return;
+      }
+
       await this.channel.sendMessage(
         userId,
         'This bot does not support regular messaging. Please use the commands menu to interact.',
       );
     });
+  }
+
+  private async refreshKnownUserCommands(): Promise<void> {
+    const users = await this.prisma.user.findMany();
+    const results = await Promise.allSettled(
+      users.map(async (user) => {
+        try {
+          await this.channel.setUserCommands(user.telegramId, user.isAdmin);
+        } catch (err) {
+          this.logger.warn(
+            `Failed to refresh Telegram commands for ${user.telegramId}: ${err}`,
+          );
+          throw err;
+        }
+      }),
+    );
+    const failed = results.filter((result) => result.status === 'rejected');
+    if (failed.length > 0) {
+      this.logger.warn(
+        `Failed to refresh Telegram commands for ${failed.length} user(s)`,
+      );
+    }
+    this.logger.log(`Refreshed Telegram commands for ${users.length} user(s)`);
+  }
+
+  private async replacePendingCommand(
+    userId: string,
+    pendingCommand: PendingCommand,
+  ): Promise<void> {
+    const existing = await this.getPendingCommand(userId);
+    if (existing) {
+      await this.channel.sendMessage(
+        userId,
+        'Previous command cancelled. Starting new command.',
+      );
+    }
+
+    await this.redis.set(
+      BOT_STATE_KEY.pendingCommand(userId),
+      JSON.stringify(pendingCommand),
+      BOT_STATE_TTL.pendingCommand,
+    );
+  }
+
+  private async cancelPendingCommand(userId: string): Promise<void> {
+    const existing = await this.getPendingCommand(userId);
+    if (!existing) return;
+
+    await this.redis.del(BOT_STATE_KEY.pendingCommand(userId));
+    await this.channel.sendMessage(userId, 'Previous command cancelled.');
+  }
+
+  private async getPendingCommand(
+    userId: string,
+  ): Promise<PendingCommand | null> {
+    const raw = await this.redis.get(BOT_STATE_KEY.pendingCommand(userId));
+    if (!raw) return null;
+
+    try {
+      return JSON.parse(raw) as PendingCommand;
+    } catch {
+      await this.redis.del(BOT_STATE_KEY.pendingCommand(userId));
+      return null;
+    }
+  }
+
+  private async handlePendingPostCommand(
+    userId: string,
+    text: string,
+    pendingCommand: PendingCommand,
+  ): Promise<void> {
+    const parts = text
+      .split(',')
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => !isNaN(n));
+    const invalid = parts.some(
+      (n) => n < 1 || n > pendingCommand.matchIds.length,
+    );
+
+    if (parts.length === 0 || parts.length > 5 || invalid) {
+      await this.channel.sendMessage(
+        userId,
+        `Send numbers between 1 and ${pendingCommand.matchIds.length}, separated by commas (max 5). Example: 1,3`,
+      );
+      return;
+    }
+
+    const selected = [...new Set(parts)].map(
+      (n) => pendingCommand.matchIds[n - 1],
+    );
+    await this.redis.del(BOT_STATE_KEY.pendingCommand(userId));
+    await this.channel.sendMessage(
+      userId,
+      'Generating poster... This may take a few seconds.',
+    );
+    await this.channel.sendAction(userId, 'uploading_photo');
+    await this.post.enqueuePost(selected, userId);
   }
 
   private async notifyAdmins(message: string): Promise<void> {
@@ -188,7 +328,7 @@ export class BotService implements OnModuleInit {
   async sendDailyAdminDigest(): Promise<void> {
     this.logger.log('Sending daily games digest to admins');
     const matches = await this.football.getTodayMatches();
-    const label = `Games Today — ${todayLabel()}`;
+    const label = `Games Today - ${todayLabel()}`;
     await this.notifyAdmins(formatMatches(matches, label));
   }
 
@@ -197,13 +337,5 @@ export class BotService implements OnModuleInit {
     this.logger.log('Sending weekly games digest to admins');
     const matches = await this.football.getWeekMatches();
     await this.notifyAdmins(formatWeekMatches(matches, 'Games This Week'));
-  }
-
-  @Timeout(3600000)
-  async sendTestAdminDigest(): Promise<void> {
-    this.logger.log('Sending test games digest to admins (1-hour timeout)');
-    const matches = await this.football.getTodayMatches();
-    const label = `[TEST] Games Today — ${todayLabel()}`;
-    await this.notifyAdmins(formatMatches(matches, label));
   }
 }

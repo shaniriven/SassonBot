@@ -100,11 +100,15 @@ export class FootballService {
               update: {
                 status: f.fixture.status.short,
                 kickoffTime: new Date(f.fixture.date),
+                homeLogo: f.teams.home.logo ?? null,
+                awayLogo: f.teams.away.logo ?? null,
               },
               create: {
                 apiId: f.fixture.id,
                 homeTeam: f.teams.home.name,
                 awayTeam: f.teams.away.name,
+                homeLogo: f.teams.home.logo ?? null,
+                awayLogo: f.teams.away.logo ?? null,
                 league: f.league.name,
                 kickoffTime: new Date(f.fixture.date),
                 matchDate: toIsraeliDate(new Date(f.fixture.date)),

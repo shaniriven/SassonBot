@@ -7,6 +7,9 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "preview:backgrounds": "ts-node -P tsconfig.scripts.json scripts/preview-poster.ts",
+    "preview:counts": "ts-node -P tsconfig.scripts.json scripts/preview-counts.ts",
+    "preview:fonts": "ts-node -P tsconfig.scripts.json scripts/preview-fonts.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "npx kill-port 3000 & nest start --watch",
@@ -20,7 +23,15 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@fontsource/anton": "^5.2.7",
+    "@fontsource/bebas-neue": "^5.2.7",
+    "@fontsource/black-han-sans": "^5.2.8",
+    "@fontsource/passion-one": "^5.2.8",
+    "@fontsource/russo-one": "^5.2.7",
+    "@fontsource/teko": "^5.2.7",
+    "@napi-rs/canvas": "^0.1.100",
     "@nestjs/axios": "^4.0.1",
+    "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
@@ -31,10 +42,12 @@
     "@prisma/client": "^7.8.0",
     "axios": "^1.15.2",
     "bullmq": "^5.76.3",
+    "groq-sdk": "^1.1.2",
     "ioredis": "^5.10.1",
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sharp": "^0.34.5",
     "telegraf": "^4.16.3"
   },
   "devDependencies": {

@@ -7,8 +7,8 @@ export interface FixtureConfig {
     status: { short: string };
   };
   teams: {
-    home: { id: number; name: string };
-    away: { id: number; name: string };
+    home: { id: number; name: string; logo: string | null };
+    away: { id: number; name: string; logo: string | null };
   };
   league: { name: string; round: Round };
 }
