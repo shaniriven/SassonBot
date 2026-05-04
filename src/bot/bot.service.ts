@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
@@ -6,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FootballService } from '../football/football.service';
 import { RedisService } from '../redis/redis.service';
 import { PostService } from '../post/post.service';
+import { InlineButton } from '../common/interfaces/channel-adapter.interface';
 import {
   formatMatches,
   formatMatchesForPosts,
@@ -13,7 +15,13 @@ import {
 } from '../common/utils/format-matches.util';
 import { todayLabel } from '../common/utils/date.util';
 import { CMD } from './commands.const';
-import { BOT_STATE_KEY, BOT_STATE_TTL, PendingCommand } from './bot.const';
+import {
+  GENERATE_POST_DATE_CALLBACK_PREFIX,
+  BOT_STATE_KEY,
+  BOT_STATE_TTL,
+  PendingCommand,
+  UPCOMING_POST_DATE_LIMIT,
+} from './bot.const';
 
 @Injectable()
 export class BotService implements OnModuleInit {
@@ -143,7 +151,7 @@ export class BotService implements OnModuleInit {
       },
     );
 
-    this.channel.onCommand(CMD.adminGeneratePost.command, async (userId) => {
+    this.channel.onCommand(CMD.generatePost.command, async (userId) => {
       const user = await this.prisma.user.findUnique({
         where: { telegramId: userId },
       });
@@ -151,21 +159,38 @@ export class BotService implements OnModuleInit {
         await this.channel.sendMessage(userId, 'Not authorized.');
         return;
       }
-      const matches = await this.football.getTodayMatches();
-      if (matches.length === 0) {
-        await this.channel.sendMessage(userId, 'No matches today.');
+      await this.cancelPendingCommand(userId);
+
+      const matchDates = await this.football.getUpcomingMatchDates(
+        UPCOMING_POST_DATE_LIMIT,
+      );
+      if (matchDates.length === 0) {
+        await this.channel.sendMessage(userId, 'No upcoming matches found.');
         return;
       }
 
-      await this.replacePendingCommand(userId, {
-        type: CMD.adminGeneratePost.command,
-        matchIds: matches.map((m) => m.id),
-      });
-      await this.channel.sendMessage(
+      const messageId = await this.channel.sendMessageWithInlineButtons(
         userId,
-        formatMatchesForPosts(matches, `Post for - ${todayLabel()}`),
+        'For what day do you want to create the post?',
+        this.buildDateButtons(matchDates),
       );
+      await this.setPendingCommand(userId, {
+        type: CMD.generatePost.command,
+        step: 'awaiting_date',
+        messageId,
+      });
     });
+
+    this.channel.onCallbackQuery(
+      async (userId, callbackData, messageId, answerCallback) => {
+        await this.handleCallbackQuery(
+          userId,
+          callbackData,
+          messageId,
+          answerCallback,
+        );
+      },
+    );
 
     this.channel.onMessage(async (userId, text) => {
       const onboardingState = await this.redis.get(
@@ -201,8 +226,13 @@ export class BotService implements OnModuleInit {
       }
 
       const pendingCommand = await this.getPendingCommand(userId);
-      if (pendingCommand?.type === CMD.adminGeneratePost.command) {
-        await this.handlePendingPostCommand(userId, text, pendingCommand);
+      if (pendingCommand?.type === CMD.generatePost.command) {
+        if (pendingCommand.step === 'awaiting_date') {
+          await this.handlePendingPostDateText(userId);
+          return;
+        }
+
+        await this.handlePendingPostCommand(userId, text);
         return;
       }
 
@@ -236,18 +266,10 @@ export class BotService implements OnModuleInit {
     this.logger.log(`Refreshed Telegram commands for ${users.length} user(s)`);
   }
 
-  private async replacePendingCommand(
+  private async setPendingCommand(
     userId: string,
     pendingCommand: PendingCommand,
   ): Promise<void> {
-    const existing = await this.getPendingCommand(userId);
-    if (existing) {
-      await this.channel.sendMessage(
-        userId,
-        'Previous command cancelled. Starting new command.',
-      );
-    }
-
     await this.redis.set(
       BOT_STATE_KEY.pendingCommand(userId),
       JSON.stringify(pendingCommand),
@@ -256,11 +278,28 @@ export class BotService implements OnModuleInit {
   }
 
   private async cancelPendingCommand(userId: string): Promise<void> {
-    const existing = await this.getPendingCommand(userId);
-    if (!existing) return;
+    const lockToken = await this.acquirePendingCommandLock(userId);
 
-    await this.redis.del(BOT_STATE_KEY.pendingCommand(userId));
-    await this.channel.sendMessage(userId, 'Previous command cancelled.');
+    if (!lockToken) {
+   await this.redis.del(BOT_STATE_KEY.pendingCommand(userId));
+      return;
+    }
+
+    try {
+      const existing = await this.getPendingCommand(userId);
+      if (!existing) return;
+
+      await this.redis.del(BOT_STATE_KEY.pendingCommand(userId));
+      if (
+        existing.type === CMD.generatePost.command &&
+        existing.step === 'awaiting_date'
+      ) {
+        await this.removeInlineButtonsSafely(userId, existing.messageId);
+      }
+      await this.channel.sendMessage(userId, 'Previous command cancelled.');
+    } finally {
+      await this.releasePendingCommandLock(userId, lockToken);
+    }
   }
 
   private async getPendingCommand(
@@ -280,34 +319,254 @@ export class BotService implements OnModuleInit {
   private async handlePendingPostCommand(
     userId: string,
     text: string,
-    pendingCommand: PendingCommand,
   ): Promise<void> {
-    const parts = text
-      .split(',')
-      .map((s) => parseInt(s.trim(), 10))
-      .filter((n) => !isNaN(n));
-    const invalid = parts.some(
-      (n) => n < 1 || n > pendingCommand.matchIds.length,
-    );
-
-    if (parts.length === 0 || parts.length > 5 || invalid) {
+    const lockToken = await this.acquirePendingCommandLock(userId);
+    if (!lockToken) {
       await this.channel.sendMessage(
         userId,
-        `Send numbers between 1 and ${pendingCommand.matchIds.length}, separated by commas (max 5). Example: 1,3`,
+        'Post generation is already being handled.',
       );
       return;
     }
 
-    const selected = [...new Set(parts)].map(
-      (n) => pendingCommand.matchIds[n - 1],
-    );
-    await this.redis.del(BOT_STATE_KEY.pendingCommand(userId));
+    try {
+      const pendingCommand = await this.getPendingCommand(userId);
+      if (
+        pendingCommand?.type !== CMD.generatePost.command ||
+        pendingCommand.step !== 'awaiting_matches'
+      ) {
+        await this.channel.sendMessage(
+          userId,
+          'Post generation already handled or expired.',
+        );
+        return;
+      }
+
+      const parts = text
+        .split(',')
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => !isNaN(n));
+      const invalid = parts.some(
+        (n) => n < 1 || n > pendingCommand.matchIds.length,
+      );
+
+      if (parts.length === 0 || parts.length > 5 || invalid) {
+        await this.channel.sendMessage(
+          userId,
+          `Send numbers between 1 and ${pendingCommand.matchIds.length}, separated by commas (max 5). Example: 1,3`,
+        );
+        return;
+      }
+
+      const selected = [...new Set(parts)].map(
+        (n) => pendingCommand.matchIds[n - 1],
+      );
+      await this.redis.del(BOT_STATE_KEY.pendingCommand(userId));
+      await this.channel.sendMessage(
+        userId,
+        'Generating poster... This may take a few seconds.',
+      );
+      await this.channel.sendAction(userId, 'uploading_photo');
+      await this.post.enqueuePost(selected, userId);
+    } finally {
+      await this.releasePendingCommandLock(userId, lockToken);
+    }
+  }
+
+  private async handlePendingPostDateText(userId: string): Promise<void> {
     await this.channel.sendMessage(
       userId,
-      'Generating poster... This may take a few seconds.',
+      'Please click one of the date buttons above. To cancel, run the command again.',
     );
-    await this.channel.sendAction(userId, 'uploading_photo');
-    await this.post.enqueuePost(selected, userId);
+  }
+
+  private async handleCallbackQuery(
+    userId: string,
+    callbackData: string,
+    messageId: number | null,
+    answerCallback: (text?: string) => Promise<void>,
+  ): Promise<void> {
+    if (!callbackData.startsWith(GENERATE_POST_DATE_CALLBACK_PREFIX)) {
+      await answerCallback();
+      return;
+    }
+
+    const matchDate = callbackData.slice(
+      GENERATE_POST_DATE_CALLBACK_PREFIX.length,
+    );
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(matchDate)) {
+      await answerCallback('Invalid selection.');
+      return;
+    }
+
+    const lockToken = await this.acquirePendingCommandLock(userId);
+    if (!lockToken) {
+      await answerCallback('Selection already handled or expired.');
+      return;
+    }
+
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { telegramId: userId },
+      });
+      if (!user?.isAdmin) {
+        await answerCallback('Not authorized.');
+        return;
+      }
+
+      const pendingCommand = await this.getPendingCommand(userId);
+      if (
+        pendingCommand?.type !== CMD.generatePost.command ||
+        pendingCommand.step !== 'awaiting_date'
+      ) {
+        await answerCallback('Selection already handled or expired.');
+        return;
+      }
+
+      if (messageId !== null && messageId !== pendingCommand.messageId) {
+        await answerCallback('Selection already handled or expired.');
+        return;
+      }
+
+      const matches = await this.football.getMatchesByDate(matchDate);
+      if (matches.length === 0) {
+        await this.redis.del(BOT_STATE_KEY.pendingCommand(userId));
+        await this.editMessageTextSafely(
+          userId,
+          pendingCommand.messageId,
+          `For what day do you want to create the post?\n→ No matches found for ${this.formatMatchDateConfirmation(matchDate)}.`,
+        );
+        await answerCallback('No matches found for this date.');
+        await this.channel.sendMessage(
+          userId,
+          'No matches found for this date. Post generation cancelled.',
+        );
+        return;
+      }
+
+      const stillPending = await this.getPendingCommand(userId);
+      if (
+        stillPending?.type !== CMD.generatePost.command ||
+        stillPending.step !== 'awaiting_date'
+      ) {
+        await answerCallback('Selection already handled or expired.');
+        return;
+      }
+
+      await this.setPendingCommand(userId, {
+        type: CMD.generatePost.command,
+        step: 'awaiting_matches',
+        matchDate,
+        matchIds: matches.map((m) => m.id),
+      });
+      await this.editMessageTextSafely(
+        userId,
+        pendingCommand.messageId,
+        `For what day do you want to create the post?\n→ ${this.formatMatchDateConfirmation(matchDate)}`,
+      );
+      await answerCallback('Date selected.');
+      await this.channel.sendMessage(
+        userId,
+        formatMatchesForPosts(
+          matches,
+          `Post for - ${this.formatMatchDateLabel(matchDate)}`,
+        ),
+      );
+    } finally {
+      await this.releasePendingCommandLock(userId, lockToken);
+    }
+  }
+
+  private buildDateButtons(matchDates: string[]): InlineButton[][] {
+    const buttons = matchDates.map((matchDate) => {
+      const callbackData = `${GENERATE_POST_DATE_CALLBACK_PREFIX}${matchDate}`;
+      if (callbackData.length > 64) {
+        this.logger.warn(
+          `callback_data exceeds Telegram 64-byte limit: ${callbackData.length} bytes`,
+        );
+      }
+      return { text: this.formatMatchDateButton(matchDate), callbackData };
+    });
+
+    const rows: InlineButton[][] = [];
+    for (let i = 0; i < buttons.length; i += 2) {
+      rows.push(buttons.slice(i, i + 2));
+    }
+    return rows;
+  }
+
+  private formatMatchDateButton(matchDate: string): string {
+    const date = new Date(`${matchDate}T12:00:00Z`);
+    return date.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Jerusalem',
+      weekday: 'short',
+      day: '2-digit',
+      month: '2-digit',
+    });
+  }
+
+  private formatMatchDateLabel(matchDate: string): string {
+    const date = new Date(`${matchDate}T12:00:00Z`);
+    return date.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Jerusalem',
+      day: '2-digit',
+      month: '2-digit',
+    });
+  }
+
+  private formatMatchDateConfirmation(matchDate: string): string {
+    const date = new Date(`${matchDate}T12:00:00Z`);
+    return date.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Jerusalem',
+      weekday: 'short',
+      day: 'numeric',
+      month: 'long',
+    });
+  }
+
+  private async acquirePendingCommandLock(
+    userId: string,
+  ): Promise<string | null> {
+    const token = randomUUID();
+    const acquired = await this.redis.setNx(
+      BOT_STATE_KEY.pendingCommandLock(userId),
+      token,
+      BOT_STATE_TTL.pendingCommandLock,
+    );
+    return acquired ? token : null;
+  }
+
+  private async releasePendingCommandLock(
+    userId: string,
+    token: string,
+  ): Promise<void> {
+    await this.redis.delIfValue(
+      BOT_STATE_KEY.pendingCommandLock(userId),
+      token,
+    );
+  }
+
+  private async removeInlineButtonsSafely(
+    userId: string,
+    messageId: number,
+  ): Promise<void> {
+    try {
+      await this.channel.removeInlineButtons(userId, messageId);
+    } catch (err) {
+      this.logger.warn(`Failed to remove inline buttons: ${err}`);
+    }
+  }
+
+  private async editMessageTextSafely(
+    userId: string,
+    messageId: number,
+    text: string,
+  ): Promise<void> {
+    try {
+      await this.channel.editMessageText(userId, messageId, text);
+    } catch (err) {
+      this.logger.warn(`Failed to edit message text: ${err}`);
+    }
   }
 
   private async notifyAdmins(message: string): Promise<void> {

@@ -4,8 +4,10 @@ import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import {
   ChannelAdapter,
+  CallbackQueryHandler,
   CommandHandler,
   GuardHandler,
+  InlineButton,
   MessageHandler,
 } from '../common/interfaces/channel-adapter.interface';
 import { ADMIN_COMMANDS, CMD, USER_COMMANDS } from './commands.const';
@@ -45,6 +47,41 @@ export class TelegramAdapter implements ChannelAdapter, OnModuleInit {
 
   async sendMessage(userId: string, text: string): Promise<void> {
     await this.bot.telegram.sendMessage(userId, text);
+  }
+
+  async sendMessageWithInlineButtons(
+    userId: string,
+    text: string,
+    buttons: InlineButton[][],
+  ): Promise<number> {
+    const msg = await this.bot.telegram.sendMessage(userId, text, {
+      reply_markup: {
+        inline_keyboard: buttons.map((row) =>
+          row.map((button) => ({
+            text: button.text,
+            callback_data: button.callbackData,
+          })),
+        ),
+      },
+    });
+    return msg.message_id;
+  }
+
+  async removeInlineButtons(userId: string, messageId: number): Promise<void> {
+    await this.bot.telegram.editMessageReplyMarkup(
+      userId,
+      messageId,
+      undefined,
+      { inline_keyboard: [] },
+    );
+  }
+
+  async editMessageText(
+    userId: string,
+    messageId: number,
+    text: string,
+  ): Promise<void> {
+    await this.bot.telegram.editMessageText(userId, messageId, undefined, text);
   }
 
   async sendImage(
@@ -107,6 +144,40 @@ export class TelegramAdapter implements ChannelAdapter, OnModuleInit {
     this.bot.on(message('text'), (ctx) =>
       handler(String(ctx.from.id), ctx.message.text),
     );
+  }
+
+  onCallbackQuery(handler: CallbackQueryHandler): void {
+    this.bot.on('callback_query', async (ctx) => {
+      if (!ctx.from || !('data' in ctx.callbackQuery)) {
+        await ctx.answerCbQuery();
+        return;
+      }
+
+      const messageId =
+        ctx.callbackQuery.message && 'message_id' in ctx.callbackQuery.message
+          ? ctx.callbackQuery.message.message_id
+          : null;
+
+      let answered = false;
+      const answerOnce = async (text?: string): Promise<void> => {
+        if (answered) return;
+        answered = true;
+        await ctx.answerCbQuery(text);
+      };
+
+      try {
+        await handler(
+          String(ctx.from.id),
+          ctx.callbackQuery.data,
+          messageId,
+          answerOnce,
+        );
+      } catch (err) {
+        this.logger.error(`Callback query handler error: ${err}`);
+      } finally {
+        await answerOnce();
+      }
+    });
   }
 
   onCommand(command: string, handler: CommandHandler): void {
