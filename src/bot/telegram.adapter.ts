@@ -35,14 +35,33 @@ export class TelegramAdapter implements ChannelAdapter, OnModuleInit {
     void this.bot.telegram.setMyCommands([CMD.start]).catch((err) => {
       this.logger.warn(`Failed to set default Telegram commands: ${err}`);
     });
-    void this.bot
-      .launch()
-      .then(() => this.logger.log('Telegram bot started'))
-      .catch((err) => {
-        this.logger.error(`Failed to launch Telegram bot: ${err}`);
-      });
+    void this.launchWithRetry();
     process.once('SIGINT', () => this.bot.stop('SIGINT'));
     process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
+  }
+
+  private async launchWithRetry(
+    maxAttempts = 10,
+    delayMs = 3000,
+  ): Promise<void> {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.bot.launch();
+        this.logger.log('Telegram bot started');
+        return;
+      } catch (err) {
+        const is409 = String(err).includes('409');
+        if (is409 && attempt < maxAttempts) {
+          this.logger.warn(
+            `Bot launch conflict (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs}ms`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        } else {
+          this.logger.error(`Failed to launch Telegram bot: ${err}`);
+          return;
+        }
+      }
+    }
   }
 
   async sendMessage(userId: string, text: string): Promise<void> {
