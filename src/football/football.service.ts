@@ -6,6 +6,7 @@ import { firstValueFrom } from 'rxjs';
 import { FAVORITE_LEAGUES } from './const/leagues.const';
 import { FixtureConfig } from './interfaces/fixture.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { Match } from '@prisma/client';
 import {
   toIsraeliDate,
   currentSeason,
@@ -151,6 +152,25 @@ export class FootballService {
       where: {
         matchDate: { gte: today, lte: saturday },
       },
+      orderBy: { kickoffTime: 'asc' },
+    });
+  }
+
+  async getUpcomingMatchDates(limit: number): Promise<string[]> {
+    const today = toIsraeliDate(new Date());
+    const rows = await this.prisma.match.findMany({
+      where: { matchDate: { gte: today } },
+      distinct: ['matchDate'],
+      orderBy: { matchDate: 'asc' },
+      take: limit,
+      select: { matchDate: true },
+    });
+    return rows.map((row) => row.matchDate);
+  }
+
+  async getMatchesByDate(matchDate: string): Promise<Match[]> {
+    return this.prisma.match.findMany({
+      where: { matchDate },
       orderBy: { kickoffTime: 'asc' },
     });
   }

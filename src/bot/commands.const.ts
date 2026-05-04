@@ -14,17 +14,21 @@ export const CMD = {
     command: 'admin_load_favorite_leagues',
     description: 'Load favorite leagues into DB',
   },
-  adminGeneratePost: {
-    command: 'admin_generate_post',
+  generatePost: {
+    command: 'generate_post',
     description: 'Generate image post for matches',
   },
 } as const;
 
-export const USER_COMMANDS = [CMD.gamesToday, CMD.gamesWeek, CMD.gamesNextWeek];
+export const USER_COMMANDS = [
+  CMD.gamesToday,
+  CMD.gamesWeek,
+  CMD.gamesNextWeek,
+  CMD.generatePost,
+];
 
 export const ADMIN_COMMANDS = [
   ...USER_COMMANDS,
-  CMD.adminGeneratePost,
   CMD.adminSyncMatches,
   CMD.adminLoadFavoriteLeagues,
 ];
