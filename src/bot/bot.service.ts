@@ -343,7 +343,7 @@ export class BotService implements OnModuleInit {
       }
 
       const parts = text
-        .split(',')
+        .split(/[\s,]+/)
         .map((s) => parseInt(s.trim(), 10))
         .filter((n) => !isNaN(n));
       const invalid = parts.some(
