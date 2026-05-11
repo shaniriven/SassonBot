@@ -16,19 +16,22 @@ export const CMD = {
   },
   generatePost: {
     command: 'generate_post',
-    description: 'Generate image post for matches',
+    description: 'Create image post for matches',
+  },
+  generateAlbum: {
+    command: 'generate_album',
+    description: 'Create weekly posts album',
   },
 } as const;
 
-export const USER_COMMANDS = [
+export const USER_COMMANDS = [CMD.gamesToday, CMD.gamesWeek, CMD.gamesNextWeek];
+
+export const ADMIN_COMMANDS = [
+  CMD.generatePost,
+  CMD.generateAlbum,
   CMD.gamesToday,
   CMD.gamesWeek,
   CMD.gamesNextWeek,
-  CMD.generatePost,
-];
-
-export const ADMIN_COMMANDS = [
-  ...USER_COMMANDS,
   CMD.adminSyncMatches,
   CMD.adminLoadFavoriteLeagues,
 ];
