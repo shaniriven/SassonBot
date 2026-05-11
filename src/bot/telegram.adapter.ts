@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import {
+  AlbumItem,
   ChannelAdapter,
   CallbackQueryHandler,
   CommandHandler,
@@ -122,6 +123,17 @@ export class TelegramAdapter implements ChannelAdapter, OnModuleInit {
       { caption },
     );
     return msg.photo[msg.photo.length - 1].file_id;
+  }
+
+  async sendAlbum(userId: string, items: AlbumItem[]): Promise<void> {
+    await this.bot.telegram.sendMediaGroup(
+      userId,
+      items.map((item) => ({
+        type: 'photo' as const,
+        media: { source: item.source },
+        caption: item.caption,
+      })),
+    );
   }
 
   async sendAction(

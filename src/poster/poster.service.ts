@@ -5,6 +5,7 @@ import { Match } from '@prisma/client';
 import { POSTER_CONFIG } from './poster.config';
 import { FontService } from './font.service';
 import { FONTS } from './fonts.const';
+import { getIsraeliTimeMinutes } from '../common/utils/date.util';
 
 for (const font of FONTS) {
   GlobalFonts.registerFromPath(font.woffPath, font.family);
@@ -17,6 +18,9 @@ export class PosterService {
   constructor(private readonly fontService: FontService) {}
 
   async generate(matches: Match[], backgroundPath: string): Promise<Buffer> {
+    const sorted = [...matches]
+      .sort((a, b) => getIsraeliTimeMinutes(a.kickoffTime) - getIsraeliTimeMinutes(b.kickoffTime))
+      .slice(0, 5);
     const { poster, overlay, logo, center, row, font } = POSTER_CONFIG;
 
     const backgroundBuffer = await sharp(backgroundPath)
@@ -40,16 +44,16 @@ export class PosterService {
       { input: overlayBuffer, top: 0, left: 0 },
     ];
 
-    const rowsHeight = matches.length * row.height;
-    const gapsHeight = Math.max(0, matches.length - 1) * row.gap;
+    const rowsHeight = sorted.length * row.height;
+    const gapsHeight = Math.max(0, sorted.length - 1) * row.gap;
     const blockHeight = rowsHeight + gapsHeight;
     const rowStartY = Math.round((poster.height - blockHeight) / 2);
     const homeLogoLeft = logo.sidePadding;
     const awayLogoLeft = poster.width - logo.sidePadding - logo.size;
     const centerLeft = Math.round((poster.width - center.width) / 2);
 
-    for (let i = 0; i < matches.length; i++) {
-      const match = matches[i];
+    for (let i = 0; i < sorted.length; i++) {
+      const match = sorted[i];
       const rowY = rowStartY + i * (row.height + row.gap);
       const logoTop = rowY + Math.round((row.height - logo.size) / 2);
 

@@ -15,6 +15,11 @@ export type CallbackQueryHandler = (
   answerCallback: (text?: string) => Promise<void>,
 ) => Promise<void>;
 
+export interface AlbumItem {
+  source: Buffer;
+  caption?: string;
+}
+
 export interface ChannelAdapter {
   sendMessage(userId: string, text: string): Promise<void>;
   sendMessageWithInlineButtons(
@@ -23,9 +28,14 @@ export interface ChannelAdapter {
     buttons: InlineButton[][],
   ): Promise<number>;
   removeInlineButtons(userId: string, messageId: number): Promise<void>;
-  editMessageText(userId: string, messageId: number, text: string): Promise<void>;
+  editMessageText(
+    userId: string,
+    messageId: number,
+    text: string,
+  ): Promise<void>;
   sendImage(userId: string, imageUrl: string, caption?: string): Promise<void>;
   sendPhoto(userId: string, buffer: Buffer, caption?: string): Promise<string>;
+  sendAlbum(userId: string, items: AlbumItem[]): Promise<void>;
   sendAction(
     userId: string,
     action: 'typing' | 'uploading_photo',

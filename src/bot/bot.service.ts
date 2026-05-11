@@ -6,15 +6,19 @@ import { TelegramAdapter } from './telegram.adapter';
 import { PrismaService } from '../prisma/prisma.service';
 import { FootballService } from '../football/football.service';
 import { RedisService } from '../redis/redis.service';
+import type { Match } from '@prisma/client';
 import { PostService } from '../post/post.service';
-import { InlineButton } from '../common/interfaces/channel-adapter.interface';
+import {
+  AlbumItem,
+  InlineButton,
+} from '../common/interfaces/channel-adapter.interface';
 import {
   formatMatches,
   formatMatchesForPosts,
   formatWeekMatches,
   orderMatchesForPostSelection,
 } from '../common/utils/format-matches.util';
-import { todayLabel } from '../common/utils/date.util';
+import { todayLabel, matchDateToDay } from '../common/utils/date.util';
 import { CMD } from './commands.const';
 import {
   GENERATE_POST_DATE_CALLBACK_PREFIX,
@@ -94,7 +98,7 @@ export class BotService implements OnModuleInit {
 
     this.channel.onCommand(CMD.gamesNextWeek.command, async (userId) => {
       await this.cancelPendingCommand(userId);
-      const matches = await this.football.getNextWeekMatches();
+      const matches = await this.football.getWeekMatchesForCron();
       await this.channel.sendMessage(
         userId,
         formatWeekMatches(matches, 'Games Next Week'),
@@ -180,6 +184,43 @@ export class BotService implements OnModuleInit {
         step: 'awaiting_date',
         messageId,
       });
+    });
+
+    this.channel.onCommand(CMD.generateAlbum.command, async (userId) => {
+      const user = await this.prisma.user.findUnique({
+        where: { telegramId: userId },
+      });
+      if (!user?.isAdmin) {
+        await this.channel.sendMessage(userId, 'Not authorized.');
+        return;
+      }
+      await this.cancelPendingCommand(userId);
+
+      const matches = await this.football.getWeekMatches();
+      await this.channel.sendMessage(
+        userId,
+        formatWeekMatches(matches, 'Games This Week'),
+      );
+
+      await this.channel.sendMessage(userId, 'Generating weekly album...');
+
+      const favoritesByDate = await this.football.getWeekFavoriteTeamMatches();
+      if (favoritesByDate.length === 0) {
+        await this.channel.sendMessage(
+          userId,
+          'No favorite team matches found for this week.',
+        );
+        return;
+      }
+
+      await this.deliverAlbum(
+        favoritesByDate,
+        (msg) => this.channel.sendMessage(userId, msg),
+        (items) =>
+          items.length === 1
+            ? this.channel.sendPhoto(userId, items[0].source, items[0].caption)
+            : this.channel.sendAlbum(userId, items),
+      );
     });
 
     this.channel.onCallbackQuery(
@@ -282,7 +323,7 @@ export class BotService implements OnModuleInit {
     const lockToken = await this.acquirePendingCommandLock(userId);
 
     if (!lockToken) {
-   await this.redis.del(BOT_STATE_KEY.pendingCommand(userId));
+      await this.redis.del(BOT_STATE_KEY.pendingCommand(userId));
       return;
     }
 
@@ -580,24 +621,79 @@ export class BotService implements OnModuleInit {
       this.logger.warn('No admin users found for notification');
       return;
     }
-    await Promise.all(
+    const results = await Promise.allSettled(
       admins.map((a) => this.channel.sendMessage(a.telegramId, message)),
     );
-    this.logger.log(`Notified ${admins.length} admin(s)`);
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    if (failed > 0) this.logger.warn(`Failed to notify ${failed} admin(s)`);
+    this.logger.log(`Notified ${admins.length - failed} admin(s)`);
   }
 
-  @Cron('0 13 * * *')
-  async sendDailyAdminDigest(): Promise<void> {
-    this.logger.log('Sending daily games digest to admins');
-    const matches = await this.football.getTodayMatches();
-    const label = `Games Today - ${todayLabel()}`;
-    await this.notifyAdmins(formatMatches(matches, label));
+  private async deliverAlbum(
+    favoritesByDate: { date: string; matches: Match[]; strongDay: boolean; reason?: string }[],
+    sendText: (msg: string) => Promise<void>,
+    sendAlbum: (items: AlbumItem[]) => Promise<unknown>,
+  ): Promise<void> {
+    const items: AlbumItem[] = [];
+    for (const { date, matches } of favoritesByDate) {
+      const buffer = await this.post.generatePosterBuffer(matches);
+      items.push({ source: buffer, caption: matchDateToDay(date) });
+    }
+    await sendAlbum(items);
+
+    const strongDays = favoritesByDate.filter(({ strongDay }) => strongDay);
+    if (strongDays.length > 0) {
+      const dayNames = strongDays.map(({ date }) => matchDateToDay(date));
+      await sendText(`Suggested strong game days: ${dayNames.join(', ')}`);
+    }
+
+    const daysWithReason = favoritesByDate.filter(({ reason }) => reason);
+    if (daysWithReason.length > 0) {
+      const notes = daysWithReason
+        .map(({ date, reason }) => `${matchDateToDay(date)}: ${reason}`)
+        .join('\n');
+      await sendText(`AI album notes:\n${notes}`);
+    }
   }
 
-  @Cron('0 16 * * 6')
+  private async notifyAdminsAlbum(items: AlbumItem[]): Promise<void> {
+    if (items.length === 0) return;
+
+    const admins = await this.prisma.user.findMany({
+      where: { isAdmin: true },
+    });
+    if (admins.length === 0) return;
+
+    const send = (userId: string) =>
+      items.length === 1
+        ? this.channel.sendPhoto(userId, items[0].source, items[0].caption)
+        : this.channel.sendAlbum(userId, items);
+
+    const results = await Promise.allSettled(
+      admins.map((a) => send(a.telegramId)),
+    );
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    if (failed > 0)
+      this.logger.warn(`Failed to send album to ${failed} admin(s)`);
+    this.logger.log(
+      `Sent favorite teams album to ${admins.length - failed} admin(s)`,
+    );
+  }
+
+  @Cron('0 11 * * 5')
   async sendWeeklyAdminDigest(): Promise<void> {
     this.logger.log('Sending weekly games digest to admins');
-    const matches = await this.football.getWeekMatches();
+    const matches = await this.football.getWeekMatchesForCron();
     await this.notifyAdmins(formatWeekMatches(matches, 'Games This Week'));
+
+    const favoritesByDate =
+      await this.football.getWeekFavoriteTeamMatchesForCron();
+    if (favoritesByDate.length === 0) return;
+
+    await this.deliverAlbum(
+      favoritesByDate,
+      (msg) => this.notifyAdmins(msg),
+      (items) => this.notifyAdminsAlbum(items),
+    );
   }
 }
