@@ -33,6 +33,12 @@ export interface ChannelAdapter {
     messageId: number,
     text: string,
   ): Promise<void>;
+  editMessageWithButtons(
+    userId: string,
+    messageId: number,
+    text: string,
+    buttons: InlineButton[][],
+  ): Promise<void>;
   sendImage(userId: string, imageUrl: string, caption?: string): Promise<void>;
   sendPhoto(userId: string, buffer: Buffer, caption?: string): Promise<string>;
   sendAlbum(userId: string, items: AlbumItem[]): Promise<void>;

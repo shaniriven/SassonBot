@@ -48,7 +48,7 @@ export class FootballService {
     return { 'x-apisports-key': this.apiKey };
   }
 
-  @Cron('0 9 * * 6')
+  @Cron('0 9 * * 5')
   async syncWeeklyGames(): Promise<void> {
     this.logger.log('Starting weekly games sync...');
     await this.syncLeagues();
@@ -304,6 +304,43 @@ Return only dates that have at least one suitable match. Max 5 matchIds per date
   > {
     const all = await this.getWeekMatchesForCron();
     return this.aiGroupMatchesByDate(all);
+  }
+
+  async getWeekMatchesGroupedByDate(
+    forCron: boolean,
+  ): Promise<{ date: string; matches: Match[] }[]> {
+    const all = forCron
+      ? await this.getWeekMatchesForCron()
+      : await this.getWeekMatches();
+    const evening = all.filter(
+      (m) => getIsraeliHour(m.kickoffTime) >= ALBUM_MIN_KICKOFF_HOUR,
+    );
+    const byDate = new Map<string, Match[]>();
+    for (const match of evening) {
+      const group = byDate.get(match.matchDate) ?? [];
+      group.push(match);
+      byDate.set(match.matchDate, group);
+    }
+    return [...byDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, matches]) => ({
+        date,
+        matches: matches.sort(
+          (a, b) => a.kickoffTime.getTime() - b.kickoffTime.getTime(),
+        ),
+      }));
+  }
+
+  async getWeekAutoMatches(): Promise<
+    { date: string; matches: Match[]; strongDay: boolean }[]
+  > {
+    return this.fallbackGroupByDate(await this.getWeekMatches());
+  }
+
+  async getWeekAutoMatchesForCron(): Promise<
+    { date: string; matches: Match[]; strongDay: boolean }[]
+  > {
+    return this.fallbackGroupByDate(await this.getWeekMatchesForCron());
   }
 
   async syncLeagues(): Promise<{ loaded: number }> {

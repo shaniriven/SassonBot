@@ -69,20 +69,24 @@ export class TelegramAdapter implements ChannelAdapter, OnModuleInit {
     await this.bot.telegram.sendMessage(userId, text);
   }
 
+  private toInlineKeyboard(buttons: InlineButton[][]) {
+    return {
+      inline_keyboard: buttons.map((row) =>
+        row.map((button) => ({
+          text: button.text,
+          callback_data: button.callbackData,
+        })),
+      ),
+    };
+  }
+
   async sendMessageWithInlineButtons(
     userId: string,
     text: string,
     buttons: InlineButton[][],
   ): Promise<number> {
     const msg = await this.bot.telegram.sendMessage(userId, text, {
-      reply_markup: {
-        inline_keyboard: buttons.map((row) =>
-          row.map((button) => ({
-            text: button.text,
-            callback_data: button.callbackData,
-          })),
-        ),
-      },
+      reply_markup: this.toInlineKeyboard(buttons),
     });
     return msg.message_id;
   }
@@ -102,6 +106,22 @@ export class TelegramAdapter implements ChannelAdapter, OnModuleInit {
     text: string,
   ): Promise<void> {
     await this.bot.telegram.editMessageText(userId, messageId, undefined, text);
+  }
+
+
+  async editMessageWithButtons(
+    userId: string,
+    messageId: number,
+    text: string,
+    buttons: InlineButton[][],
+  ): Promise<void> {
+    await this.bot.telegram.editMessageText(
+      userId,
+      messageId,
+      undefined,
+      text,
+      { reply_markup: this.toInlineKeyboard(buttons) },
+    );
   }
 
   async sendImage(
