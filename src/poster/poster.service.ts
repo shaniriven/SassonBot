@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import sharp from 'sharp';
 import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
 import { Match } from '@prisma/client';
-import { POSTER_CONFIG } from './poster.config';
+import { POSTER_CONFIG, HEADLINER_POSTER_CONFIG } from './poster.config';
 import { FontService } from './font.service';
 import { FONTS } from './fonts.const';
 import { getIsraeliTimeMinutes } from '../common/utils/date.util';
@@ -17,11 +17,23 @@ export class PosterService {
 
   constructor(private readonly fontService: FontService) {}
 
-  async generate(matches: Match[], backgroundPath: string): Promise<Buffer> {
-    const sorted = [...matches]
-      .sort((a, b) => getIsraeliTimeMinutes(a.kickoffTime) - getIsraeliTimeMinutes(b.kickoffTime))
-      .slice(0, 5);
-    const { poster, overlay, logo, center, row, font } = POSTER_CONFIG;
+  async generate(
+    matches: Match[],
+    backgroundPath: string,
+    headlinerId?: string,
+  ): Promise<Buffer> {
+    const byKickoff = [...matches].sort(
+      (a, b) =>
+        getIsraeliTimeMinutes(a.kickoffTime) -
+        getIsraeliTimeMinutes(b.kickoffTime),
+    );
+    const sorted = headlinerId
+      ? [
+          ...byKickoff.filter((m) => m.id === headlinerId),
+          ...byKickoff.filter((m) => m.id !== headlinerId),
+        ].slice(0, 5)
+      : byKickoff.slice(0, 5);
+    const { poster, overlay, logo, font } = POSTER_CONFIG;
 
     const backgroundBuffer = await sharp(backgroundPath)
       .resize(poster.width, poster.height, { fit: 'cover', position: 'centre' })
@@ -44,22 +56,59 @@ export class PosterService {
       { input: overlayBuffer, top: 0, left: 0 },
     ];
 
-    const rowsHeight = sorted.length * row.height;
-    const gapsHeight = Math.max(0, sorted.length - 1) * row.gap;
-    const blockHeight = rowsHeight + gapsHeight;
-    const rowStartY = Math.round((poster.height - blockHeight) / 2);
-    const homeLogoLeft = logo.sidePadding;
-    const awayLogoLeft = poster.width - logo.sidePadding - logo.size;
-    const centerLeft = Math.round((poster.width - center.width) / 2);
+    const isHeadlinerMode = !!headlinerId;
+    const gap = isHeadlinerMode
+      ? HEADLINER_POSTER_CONFIG.gap
+      : POSTER_CONFIG.row.gap;
 
+    const rowConfigs = sorted.map((m) => {
+      if (!isHeadlinerMode) {
+        return {
+          logoSize: logo.size,
+          rowHeight: POSTER_CONFIG.row.height,
+          centerWidth: POSTER_CONFIG.center.width,
+          vsSize: font.vsSize,
+          timeSize: font.timeSize,
+          vsTimeGap: font.vsTimeGap,
+        };
+      }
+      const cfg =
+        m.id === headlinerId
+          ? HEADLINER_POSTER_CONFIG.headliner
+          : HEADLINER_POSTER_CONFIG.regular;
+      return {
+        logoSize: cfg.logoSize,
+        rowHeight: cfg.rowHeight,
+        centerWidth: cfg.centerWidth,
+        vsSize: cfg.vsSize,
+        timeSize: cfg.timeSize,
+        vsTimeGap: cfg.vsTimeGap,
+      };
+    });
+
+    let totalGaps = 0;
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const isHeadlinerRow = isHeadlinerMode && sorted[i].id === headlinerId;
+      totalGaps += isHeadlinerRow ? HEADLINER_POSTER_CONFIG.headlinerGap : gap;
+    }
+    const blockHeight =
+      rowConfigs.reduce((sum, c) => sum + c.rowHeight, 0) + totalGaps;
+    const rowStartY = Math.round((poster.height - blockHeight) / 2);
+
+    let rowY = rowStartY;
     for (let i = 0; i < sorted.length; i++) {
       const match = sorted[i];
-      const rowY = rowStartY + i * (row.height + row.gap);
-      const logoTop = rowY + Math.round((row.height - logo.size) / 2);
+      const { logoSize, rowHeight, centerWidth, vsSize, timeSize, vsTimeGap } =
+        rowConfigs[i];
+
+      const logoTop = rowY + Math.round((rowHeight - logoSize) / 2);
+      const homeLogoLeft = logo.sidePadding;
+      const awayLogoLeft = poster.width - logo.sidePadding - logoSize;
+      const centerLeft = Math.round((poster.width - centerWidth) / 2);
 
       const [homeLogoBuffer, awayLogoBuffer] = await Promise.all([
-        this.fetchLogo(match.homeLogo, logo.size),
-        this.fetchLogo(match.awayLogo, logo.size),
+        this.fetchLogo(match.homeLogo, logoSize),
+        this.fetchLogo(match.awayLogo, logoSize),
       ]);
 
       const timeStr = match.kickoffTime.toLocaleTimeString('he-IL', {
@@ -70,11 +119,11 @@ export class PosterService {
       });
 
       const centerBuffer = this.buildCenterCanvas({
-        width: center.width,
-        height: row.height,
+        width: centerWidth,
+        height: rowHeight,
         timeStr,
         fontFamily,
-        font,
+        font: { ...font, vsSize, timeSize, vsTimeGap },
       });
 
       composites.push(
@@ -82,6 +131,12 @@ export class PosterService {
         { input: centerBuffer, top: rowY, left: centerLeft },
         { input: awayLogoBuffer, top: logoTop, left: awayLogoLeft },
       );
+
+      const isHeadlinerRow = isHeadlinerMode && match.id === headlinerId;
+      const rowGap: number = isHeadlinerRow
+        ? HEADLINER_POSTER_CONFIG.headlinerGap
+        : gap;
+      rowY += rowHeight + (i < sorted.length - 1 ? rowGap : 0);
     }
 
     return sharp(backgroundBuffer)
@@ -95,7 +150,13 @@ export class PosterService {
     height: number;
     timeStr: string;
     fontFamily: string;
-    font: (typeof POSTER_CONFIG)['font'];
+    font: {
+      vsSize: number;
+      timeSize: number;
+      vsTimeGap: number;
+      color: string;
+      timeColor: string;
+    };
   }): Buffer {
     const { width, height, timeStr, fontFamily, font } = opts;
     const canvas = createCanvas(width, height);

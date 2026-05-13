@@ -19,12 +19,20 @@ export class PostService {
   async enqueuePost(
     matchIds: string[],
     recipientUserId: string,
+    headlinerId?: string,
   ): Promise<void> {
-    await this.queue.add('generate', { matchIds, recipientUserId });
+    await this.queue.add('generate', {
+      matchIds,
+      recipientUserId,
+      headlinerId,
+    });
   }
 
-  async generatePosterBuffer(matches: Match[]): Promise<Buffer> {
+  async generatePosterBuffer(
+    matches: Match[],
+    headlinerId?: string,
+  ): Promise<Buffer> {
     const backgroundPath = await this.background.getNextBackground();
-    return this.poster.generate(matches, backgroundPath);
+    return this.poster.generate(matches, backgroundPath, headlinerId);
   }
 }

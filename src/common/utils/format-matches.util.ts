@@ -7,18 +7,6 @@ type Match = {
   league: string;
 };
 
-export function orderMatchesForPostSelection<T extends { league: string }>(
-  matches: T[],
-): T[] {
-  const grouped = new Map<string, T[]>();
-  for (const match of matches) {
-    if (!grouped.has(match.league)) grouped.set(match.league, []);
-    grouped.get(match.league)!.push(match);
-  }
-
-  return [...grouped.values()].flat();
-}
-
 function formatTime(date: Date): string {
   return date.toLocaleTimeString('he-IL', {
     timeZone: 'Asia/Jerusalem',
@@ -48,33 +36,6 @@ export function formatMatches(matches: Match[], label: string): string {
     lines.push('');
   }
   return lines.join('\n');
-}
-
-export function formatMatchesForPosts(matches: Match[], label: string): string {
-  if (matches.length === 0) return `No games scheduled ${label} ⚽️`;
-
-  const grouped = new Map<string, Match[]>();
-  for (const m of matches) {
-    if (!grouped.has(m.league)) grouped.set(m.league, []);
-    grouped.get(m.league)!.push(m);
-  }
-
-  const lines: string[] = [`⚽️ ${label}`, ''];
-  let index = 1;
-
-  for (const [league, games] of grouped) {
-    const flag = LEAGUE_FLAGS[league] ?? '🏆';
-    lines.push(`${flag} ${league} ${flag}`);
-    for (const m of games) {
-      lines.push(
-        `${index}. ${m.homeTeam} | ${m.awayTeam} | ${formatTime(m.kickoffTime)}`,
-      );
-      index += 1;
-    }
-    lines.push('');
-  }
-
-  return lines.join('\n').trim();
 }
 
 export function formatWeekMatches(matches: Match[], label: string): string {

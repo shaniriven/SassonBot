@@ -23,7 +23,7 @@ export class PostProcessor extends WorkerHost {
   }
 
   async process(job: Job<PostJobData>): Promise<void> {
-    const { matchIds, recipientUserId } = job.data;
+    const { matchIds, recipientUserId, headlinerId } = job.data;
 
     const matches = await this.prisma.match.findMany({
       where: { id: { in: matchIds } },
@@ -32,7 +32,11 @@ export class PostProcessor extends WorkerHost {
     if (matches.length === 0) throw new Error('No matches found for given IDs');
 
     const backgroundPath = await this.background.getNextBackground();
-    const posterBuffer = await this.poster.generate(matches, backgroundPath);
+    const posterBuffer = await this.poster.generate(
+      matches,
+      backgroundPath,
+      headlinerId,
+    );
 
     const telegramFileId = await this.channel.sendPhoto(
       recipientUserId,

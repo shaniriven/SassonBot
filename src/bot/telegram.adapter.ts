@@ -108,7 +108,6 @@ export class TelegramAdapter implements ChannelAdapter, OnModuleInit {
     await this.bot.telegram.editMessageText(userId, messageId, undefined, text);
   }
 
-
   async editMessageWithButtons(
     userId: string,
     messageId: number,

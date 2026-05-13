@@ -21,3 +21,24 @@ export const POSTER_CONFIG = {
     family: 'Russo One',
   },
 } as const;
+
+export const HEADLINER_POSTER_CONFIG = {
+  headliner: {
+    logoSize: 280,
+    rowHeight: 280,
+    centerWidth: 295,
+    vsSize: 165,
+    timeSize: 105,
+    vsTimeGap: 24,
+  },
+  regular: {
+    logoSize: 200,
+    rowHeight: 200,
+    centerWidth: 165,
+    vsSize: 98,
+    timeSize: 62,
+    vsTimeGap: 14,
+  },
+  gap: 80,
+  headlinerGap: 200,
+} as const;

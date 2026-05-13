@@ -221,7 +221,9 @@ export class FootballService {
 
   private formatIsraeliTime(date: Date): string {
     const total = getIsraeliTimeMinutes(date);
-    const h = Math.floor(total / 60).toString().padStart(2, '0');
+    const h = Math.floor(total / 60)
+      .toString()
+      .padStart(2, '0');
     const m = (total % 60).toString().padStart(2, '0');
     return `${h}:${m}`;
   }
@@ -329,18 +331,6 @@ Return only dates that have at least one suitable match. Max 5 matchIds per date
           (a, b) => a.kickoffTime.getTime() - b.kickoffTime.getTime(),
         ),
       }));
-  }
-
-  async getWeekAutoMatches(): Promise<
-    { date: string; matches: Match[]; strongDay: boolean }[]
-  > {
-    return this.fallbackGroupByDate(await this.getWeekMatches());
-  }
-
-  async getWeekAutoMatchesForCron(): Promise<
-    { date: string; matches: Match[]; strongDay: boolean }[]
-  > {
-    return this.fallbackGroupByDate(await this.getWeekMatchesForCron());
   }
 
   async syncLeagues(): Promise<{ loaded: number }> {
