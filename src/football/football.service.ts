@@ -48,7 +48,7 @@ export class FootballService {
     return { 'x-apisports-key': this.apiKey };
   }
 
-  @Cron('0 9 * * 5')
+  @Cron('0 9 * * 5', { timeZone: 'Asia/Jerusalem' })
   async syncWeeklyGames(): Promise<void> {
     this.logger.log('Starting weekly games sync...');
     await this.syncLeagues();

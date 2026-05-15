@@ -848,7 +848,7 @@ export class BotService implements OnModuleInit {
     }));
   }
 
-  @Cron('0 11 * * 5')
+  @Cron('30 13 * * 5', { timeZone: 'Asia/Jerusalem' })
   async sendWeeklyAdminDigest(): Promise<void> {
     this.logger.log('Sending weekly games digest to admins');
     const admins = await this.prisma.user.findMany({
