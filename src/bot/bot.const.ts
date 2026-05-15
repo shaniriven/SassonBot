@@ -6,6 +6,7 @@ export const GENERATE_POST_DATE_CALLBACK_PREFIX: GeneratePostDateCallbackPrefix 
 export const UPCOMING_POST_DATE_LIMIT = 6;
 
 export const ALBUM_MODE_PREFIX = 'album:mode:';
+export const WEEK_RANGE_PREFIX = 'album:week:';
 export const PICKER_TOGGLE_PREFIX = 'picker:toggle:';
 export const PICKER_NAV_PREFIX = 'picker:nav:';
 export const PICKER_STRONG_PREFIX = 'picker:strong:';
@@ -31,6 +32,12 @@ export type PendingPostDateCommand = {
 };
 
 export type AlbumModeSource = 'cmd' | 'cron';
+
+export type PendingWeekRangeCommand = {
+  type: typeof CMD.generateAlbum.command;
+  step: 'awaiting_week_range';
+  messageId: number;
+};
 
 export type PendingAlbumModeCommand = {
   type: typeof CMD.generateAlbum.command;
@@ -69,5 +76,6 @@ export type PendingPickerCommand = {
 
 export type PendingCommand =
   | PendingPostDateCommand
+  | PendingWeekRangeCommand
   | PendingAlbumModeCommand
   | PendingPickerCommand;

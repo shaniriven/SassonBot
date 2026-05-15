@@ -21,6 +21,7 @@ import { CMD } from './commands.const';
 import {
   GENERATE_POST_DATE_CALLBACK_PREFIX,
   ALBUM_MODE_PREFIX,
+  WEEK_RANGE_PREFIX,
   BOT_STATE_KEY,
   BOT_STATE_TTL,
   PendingCommand,
@@ -198,14 +199,7 @@ export class BotService implements OnModuleInit {
         return;
       }
       await this.cancelPendingCommand(userId);
-
-      const matches = await this.football.getWeekMatches();
-      await this.channel.sendMessage(
-        userId,
-        formatWeekMatches(matches, 'Games This Week'),
-      );
-
-      await this.sendAlbumModeChoice(userId, 'cmd');
+      await this.sendWeekRangeChoice(userId);
     });
 
     this.channel.onCallbackQuery(
@@ -357,6 +351,15 @@ export class BotService implements OnModuleInit {
     messageId: number | null,
     answerCallback: (text?: string) => Promise<void>,
   ): Promise<void> {
+    if (callbackData.startsWith(WEEK_RANGE_PREFIX)) {
+      return this.handleWeekRangeChoice(
+        userId,
+        callbackData,
+        messageId,
+        answerCallback,
+      );
+    }
+
     if (callbackData.startsWith(ALBUM_MODE_PREFIX)) {
       return this.handleAlbumModeChoice(
         userId,
@@ -666,6 +669,93 @@ export class BotService implements OnModuleInit {
       const dayNames = strongDays.map(({ date }) => matchDateToDay(date));
       await sendText(`${strongDayLabel}: ${dayNames.join(', ')}`);
     }
+  }
+
+  private async sendWeekRangeChoice(userId: string): Promise<void> {
+    const messageId = await this.channel.sendMessageWithInlineButtons(
+      userId,
+      'Which week do you want to generate the album for?',
+      [
+        [{ text: 'This Week', callbackData: `${WEEK_RANGE_PREFIX}this` }],
+        [{ text: 'Next Week', callbackData: `${WEEK_RANGE_PREFIX}next` }],
+      ],
+    );
+    await this.setPendingCommand(
+      userId,
+      {
+        type: CMD.generateAlbum.command,
+        step: 'awaiting_week_range',
+        messageId,
+      },
+      BOT_STATE_TTL.albumMode,
+    );
+  }
+
+  private async handleWeekRangeChoice(
+    userId: string,
+    callbackData: string,
+    messageId: number | null,
+    answerCallback: (text?: string) => Promise<void>,
+  ): Promise<void> {
+    type Outcome =
+      | { action: 'noop'; callbackText?: string }
+      | { action: 'pick'; week: 'this' | 'next'; msgId: number };
+
+    let outcome: Outcome = { action: 'noop' };
+
+    const lockToken = await this.acquirePendingCommandLock(userId);
+    if (!lockToken) {
+      outcome = { action: 'noop', callbackText: 'Already being handled.' };
+    } else {
+      try {
+        const pending = await this.getPendingCommand(userId);
+        if (
+          !pending ||
+          pending.type !== CMD.generateAlbum.command ||
+          pending.step !== 'awaiting_week_range'
+        ) {
+          outcome = { action: 'noop', callbackText: 'Expired.' };
+        } else if (messageId !== null && messageId !== pending.messageId) {
+          outcome = { action: 'noop' };
+        } else {
+          const week = callbackData.slice(WEEK_RANGE_PREFIX.length);
+          if (week !== 'this' && week !== 'next') {
+            outcome = { action: 'noop' };
+          } else {
+            await this.redis.del(BOT_STATE_KEY.pendingCommand(userId));
+            outcome = { action: 'pick', week, msgId: pending.messageId };
+          }
+        }
+      } finally {
+        await this.releasePendingCommandLock(userId, lockToken);
+      }
+    }
+
+    if (outcome.action === 'noop') {
+      await answerCallback(outcome.callbackText);
+      return;
+    }
+    await answerCallback();
+
+    const { week, msgId } = outcome;
+    const weekLabel = week === 'this' ? 'This Week' : 'Next Week';
+    await this.editMessageWithButtonsSafely(
+      userId,
+      msgId,
+      `Which week do you want to generate the album for?\n→ ${weekLabel}`,
+      [],
+    );
+
+    const source: AlbumModeSource = week === 'this' ? 'cmd' : 'cron';
+    const matches =
+      week === 'this'
+        ? await this.football.getWeekMatches()
+        : await this.football.getWeekMatchesForCron();
+    await this.channel.sendMessage(
+      userId,
+      formatWeekMatches(matches, `Games ${weekLabel}`),
+    );
+    await this.sendAlbumModeChoice(userId, source);
   }
 
   private async sendAlbumModeChoice(
