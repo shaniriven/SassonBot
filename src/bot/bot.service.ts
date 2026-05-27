@@ -699,6 +699,7 @@ export class BotService implements OnModuleInit {
   ): Promise<void> {
     type Outcome =
       | { action: 'noop'; callbackText?: string }
+      | { action: 'expired'; msgId: number | null }
       | { action: 'pick'; week: 'this' | 'next'; msgId: number };
 
     let outcome: Outcome = { action: 'noop' };
@@ -714,7 +715,7 @@ export class BotService implements OnModuleInit {
           pending.type !== CMD.generateAlbum.command ||
           pending.step !== 'awaiting_week_range'
         ) {
-          outcome = { action: 'noop', callbackText: 'Expired.' };
+          outcome = { action: 'expired', msgId: messageId };
         } else if (messageId !== null && messageId !== pending.messageId) {
           outcome = { action: 'noop' };
         } else {
@@ -733,6 +734,23 @@ export class BotService implements OnModuleInit {
 
     if (outcome.action === 'noop') {
       await answerCallback(outcome.callbackText);
+      return;
+    }
+
+    if (outcome.action === 'expired') {
+      await answerCallback();
+      if (outcome.msgId !== null) {
+        await this.editMessageWithButtonsSafely(
+          userId,
+          outcome.msgId,
+          'Which week do you want to generate the album for?\n→ This selection has expired.',
+          [],
+        );
+      }
+      await this.channel.sendMessage(
+        userId,
+        'This prompt has expired. Use /generate_album to create a new one.',
+      );
       return;
     }
     await answerCallback();
@@ -806,6 +824,7 @@ export class BotService implements OnModuleInit {
   ): Promise<void> {
     type Outcome =
       | { action: 'noop'; callbackText?: string }
+      | { action: 'expired'; msgId: number | null }
       | { action: 'cancel'; msgId: number }
       | {
           action: 'generate';
@@ -827,7 +846,7 @@ export class BotService implements OnModuleInit {
           pending.type !== CMD.generateAlbum.command ||
           pending.step !== 'awaiting_album_mode'
         ) {
-          outcome = { action: 'noop', callbackText: 'Expired.' };
+          outcome = { action: 'expired', msgId: messageId };
         } else if (messageId !== null && messageId !== pending.messageId) {
           outcome = { action: 'noop' };
         } else {
@@ -853,6 +872,23 @@ export class BotService implements OnModuleInit {
 
     if (outcome.action === 'noop') {
       await answerCallback(outcome.callbackText);
+      return;
+    }
+
+    if (outcome.action === 'expired') {
+      await answerCallback();
+      if (outcome.msgId !== null) {
+        await this.editMessageWithButtonsSafely(
+          userId,
+          outcome.msgId,
+          "How do you want to generate this week's album?\n→ This selection has expired.",
+          [],
+        );
+      }
+      await this.channel.sendMessage(
+        userId,
+        'This prompt has expired. Use /generate_album to create a new one.',
+      );
       return;
     }
     await answerCallback();

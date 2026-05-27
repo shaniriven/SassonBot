@@ -21,8 +21,8 @@ export const BOT_STATE_TTL = {
   onboarding: 600,
   pendingCommand: 120,
   pendingCommandLock: 30,
-  albumMode: 1800,
-  albumPicker: 1800,
+  albumMode: 604800,
+  albumPicker: 259200,
 } as const;
 
 export type PendingPostDateCommand = {
