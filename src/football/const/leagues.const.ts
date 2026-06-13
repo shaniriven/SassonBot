@@ -82,6 +82,7 @@ export const FAVORITE_LEAGUES: LeagueConfig[] = [
     id_season: 7902,
     name: 'FIFA World Cup',
     countryFlag: CountryFlag.World,
+    seasonYear: 2026,
   },
   {
     id_league: 3,

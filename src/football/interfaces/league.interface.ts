@@ -15,4 +15,5 @@ export interface LeagueConfig {
   countryFlag?: CountryFlag;
   teams?: TeamConfig[];
   rounds?: Round[];
+  seasonYear?: number;
 }

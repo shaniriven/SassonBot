@@ -80,10 +80,15 @@ export class FootballService {
       );
 
       for (const league of leagueIds) {
+        const config = FAVORITE_LEAGUES.find((l) => l.id_league === league);
+        const leagueSeason = config?.seasonYear ?? season;
         const res = await firstValueFrom(
           this.http.get<{ response: FixtureConfig[]; errors: unknown }>(
             `${this.apiBase}/fixtures`,
-            { headers: this.headers, params: { league, season, from, to } },
+            {
+              headers: this.headers,
+              params: { league, season: leagueSeason, from, to },
+            },
           ),
         );
 
@@ -92,7 +97,6 @@ export class FootballService {
           `League ${league}: API returned ${fixtures.length} fixtures (errors: ${JSON.stringify(res.data.errors)}`,
         );
 
-        const config = FAVORITE_LEAGUES.find((l) => l.id_league === league);
         const teamIds = config?.teams?.map((t) => t.id);
         const byTeam = teamIds
           ? fixtures.filter(
