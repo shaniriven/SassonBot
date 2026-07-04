@@ -56,7 +56,8 @@ export function getIsraeliHour(date: Date): number {
     hour12: false,
   }).formatToParts(date);
   const hourPart = parts.find((p) => p.type === 'hour');
-  return parseInt(hourPart?.value ?? '0', 10);
+  const h = parseInt(hourPart?.value ?? '0', 10);
+  return h === 24 ? 0 : h; // Intl can return 24 for midnight; normalize to 0
 }
 
 export function matchDateToDay(matchDate: string): string {
@@ -75,7 +76,8 @@ export function getIsraeliTimeMinutes(date: Date): number {
   }).formatToParts(date);
   const h = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10);
   const m = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10);
-  return h * 60 + m;
+  const normalized = h === 24 ? 0 : h;
+  return normalized * 60 + m;
 }
 
 export function isFriday(dateString: string): boolean {
