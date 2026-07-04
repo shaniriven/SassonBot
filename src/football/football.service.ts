@@ -7,6 +7,7 @@ import { FAVORITE_LEAGUES } from './const/leagues.const';
 import { FAVORITE_TEAMS } from './const/favorite-teams.const';
 import {
   ALBUM_MIN_KICKOFF_HOUR,
+  POST_SESSION_END_HOUR,
   DISPLAY_FRIDAY,
   WEEK_START_DAY,
 } from './const/album-settings.const';
@@ -16,6 +17,7 @@ import { OpenAiService } from '../openai/openai.service';
 import { Match } from '@prisma/client';
 import {
   toIsraeliDate,
+  addDays,
   currentSeason,
   getWeekEnd,
   getNextWeekStart,
@@ -182,21 +184,51 @@ export class FootballService {
   }
 
   async getUpcomingMatchDates(limit: number): Promise<string[]> {
-    const today = toIsraeliDate(new Date());
+    const now = new Date();
+    const israeliHour = getIsraeliHour(now);
+    const calendarToday = toIsraeliDate(now);
+    // Before 5am we're still in last night's session; anchor to yesterday
+    const sessionAnchor =
+      israeliHour < POST_SESSION_END_HOUR
+        ? addDays(calendarToday, -1)
+        : calendarToday;
+
     const rows = await this.prisma.match.findMany({
-      where: { matchDate: { gte: today } },
-      distinct: ['matchDate'],
-      orderBy: { matchDate: 'asc' },
-      take: limit,
-      select: { matchDate: true },
+      where: { matchDate: { gte: sessionAnchor } },
+      orderBy: [{ matchDate: 'asc' }, { kickoffTime: 'asc' }],
+      select: { matchDate: true, kickoffTime: true },
     });
-    return rows.map((row) => row.matchDate);
+
+    const seen = new Set<string>();
+    const dates: string[] = [];
+    for (const row of rows) {
+      const hour = getIsraeliHour(row.kickoffTime);
+      let virtualDate: string | null = null;
+      if (hour < POST_SESSION_END_HOUR) {
+        virtualDate = addDays(row.matchDate, -1);
+      } else if (hour >= ALBUM_MIN_KICKOFF_HOUR) {
+        virtualDate = row.matchDate;
+      }
+      if (virtualDate && !seen.has(virtualDate)) {
+        seen.add(virtualDate);
+        dates.push(virtualDate);
+      }
+      if (dates.length >= limit) break;
+    }
+    return dates;
   }
 
-  async getMatchesByDate(matchDate: string): Promise<Match[]> {
-    return this.prisma.match.findMany({
-      where: { matchDate },
+  async getMatchesByDate(virtualDate: string): Promise<Match[]> {
+    const nextDay = addDays(virtualDate, 1);
+    const all = await this.prisma.match.findMany({
+      where: { matchDate: { in: [virtualDate, nextDay] } },
       orderBy: { kickoffTime: 'asc' },
+    });
+    return all.filter((m) => {
+      const hour = getIsraeliHour(m.kickoffTime);
+      return m.matchDate === virtualDate
+        ? hour >= ALBUM_MIN_KICKOFF_HOUR
+        : hour < POST_SESSION_END_HOUR;
     });
   }
 

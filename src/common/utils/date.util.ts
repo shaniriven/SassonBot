@@ -81,3 +81,9 @@ export function getIsraeliTimeMinutes(date: Date): number {
 export function isFriday(dateString: string): boolean {
   return new Date(`${dateString}T12:00:00`).getDay() === 5;
 }
+
+export function addDays(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return toIsraeliDate(d);
+}
