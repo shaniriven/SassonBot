@@ -224,12 +224,20 @@ export class FootballService {
       where: { matchDate: { in: [virtualDate, nextDay] } },
       orderBy: { kickoffTime: 'asc' },
     });
-    return all.filter((m) => {
-      const hour = getIsraeliHour(m.kickoffTime);
-      return m.matchDate === virtualDate
-        ? hour >= ALBUM_MIN_KICKOFF_HOUR
-        : hour < POST_SESSION_END_HOUR;
-    });
+    return all
+      .filter((m) => {
+        const hour = getIsraeliHour(m.kickoffTime);
+        return m.matchDate === virtualDate
+          ? hour >= ALBUM_MIN_KICKOFF_HOUR
+          : hour < POST_SESSION_END_HOUR;
+      })
+      .sort((a, b) => {
+        // Evening games (virtualDate) always before next-day morning games
+        const aIsNextDay = a.matchDate !== virtualDate ? 1 : 0;
+        const bIsNextDay = b.matchDate !== virtualDate ? 1 : 0;
+        if (aIsNextDay !== bIsNextDay) return aIsNextDay - bIsNextDay;
+        return a.kickoffTime.getTime() - b.kickoffTime.getTime();
+      });
   }
 
   private fallbackGroupByDate(
