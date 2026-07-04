@@ -22,10 +22,12 @@ export class PosterService {
     backgroundPath: string,
     headlinerId?: string,
   ): Promise<Buffer> {
+    const toSessionMinutes = (m: Match) => {
+      const mins = getIsraeliTimeMinutes(m.kickoffTime);
+      return mins < 5 * 60 ? mins + 24 * 60 : mins;
+    };
     const byKickoff = [...matches].sort(
-      (a, b) =>
-        getIsraeliTimeMinutes(a.kickoffTime) -
-        getIsraeliTimeMinutes(b.kickoffTime),
+      (a, b) => toSessionMinutes(a) - toSessionMinutes(b),
     );
     const sorted = headlinerId
       ? [
